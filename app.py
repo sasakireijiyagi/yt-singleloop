@@ -726,9 +726,7 @@ st.title("YouTube Loop Trainer")
 st.caption("YouTubeの一部分をくり返し再生して、英語発表やシャドーイングや音楽ループに使う簡易アプリです。")
 
 if yt_dlp is None:
-    st.error("yt-dlp がインストールされていません。")
-    st.code("pip install yt-dlp", language="bash")
-    st.stop()
+    st.info("検索機能はローカル版のみ利用できます。YouTube URLを直接入力してください。")
 
 initialise_session_state()
 

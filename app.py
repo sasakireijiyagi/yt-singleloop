@@ -12,10 +12,19 @@ st.set_page_config(
 )
 
 
+import json
+import urllib.parse
+import urllib.request
+
 try:
     import yt_dlp
 except ImportError:
     yt_dlp = None
+
+try:
+    YOUTUBE_API_KEY: str = st.secrets["YOUTUBE_API_KEY"]
+except Exception:
+    YOUTUBE_API_KEY = ""
 
 
 def extract_video_id(url: str) -> str:
@@ -134,6 +143,71 @@ def youtube_thumbnail_url(video_id: str, candidate: Any = None) -> str:
         return f"https://img.youtube.com/vi/{video_id}/hqdefault.jpg"
 
     return ""
+
+
+def _parse_iso8601_duration(duration: str) -> int:
+    match = re.match(r"PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?", duration)
+    if not match:
+        return 0
+    hours = int(match.group(1) or 0)
+    minutes = int(match.group(2) or 0)
+    seconds = int(match.group(3) or 0)
+    return hours * 3600 + minutes * 60 + seconds
+
+
+@st.cache_data(show_spinner=False, ttl=3600)
+def search_youtube_api(query: str, max_results: int, api_key: str) -> list[dict[str, Any]]:
+    query = query.strip()
+    if not query:
+        return []
+
+    search_url = (
+        "https://www.googleapis.com/youtube/v3/search?"
+        + urllib.parse.urlencode({
+            "part": "snippet",
+            "q": query,
+            "maxResults": max_results,
+            "type": "video",
+            "key": api_key,
+        })
+    )
+    with urllib.request.urlopen(search_url) as resp:
+        search_data = json.loads(resp.read())
+
+    video_ids = [item["id"]["videoId"] for item in search_data.get("items", [])]
+    if not video_ids:
+        return []
+
+    details_url = (
+        "https://www.googleapis.com/youtube/v3/videos?"
+        + urllib.parse.urlencode({
+            "part": "snippet,contentDetails",
+            "id": ",".join(video_ids),
+            "key": api_key,
+        })
+    )
+    with urllib.request.urlopen(details_url) as resp:
+        details_data = json.loads(resp.read())
+
+    results: list[dict[str, Any]] = []
+    for item in details_data.get("items", []):
+        video_id = item["id"]
+        snippet = item["snippet"]
+        duration_sec = _parse_iso8601_duration(item["contentDetails"]["duration"])
+        thumbnail = (
+            snippet.get("thumbnails", {}).get("medium", {}).get("url")
+            or youtube_thumbnail_url(video_id)
+        )
+        results.append({
+            "video_id": video_id,
+            "title": snippet.get("title", "Untitled"),
+            "channel": snippet.get("channelTitle", ""),
+            "duration": duration_sec,
+            "duration_text": format_duration(duration_sec),
+            "webpage_url": f"https://www.youtube.com/watch?v={video_id}",
+            "thumbnail": thumbnail,
+        })
+    return results
 
 
 @st.cache_data(show_spinner=False, ttl=3600)
@@ -732,7 +806,8 @@ selected_for_preview: dict[str, Any] | None = None
 with st.sidebar:
     st.header("動画")
 
-    if yt_dlp is not None:
+    search_available = bool(YOUTUBE_API_KEY) or (yt_dlp is not None)
+    if search_available:
         source_mode = st.radio(
             "動画の選び方",
             ["YouTube検索", "URLを直接貼る"],
@@ -767,7 +842,10 @@ with st.sidebar:
         if search_submitted:
             with st.spinner("YouTubeを検索しています..."):
                 try:
-                    st.session_state.search_results = search_youtube(query, max_results)
+                    if YOUTUBE_API_KEY:
+                        st.session_state.search_results = search_youtube_api(query, max_results, YOUTUBE_API_KEY)
+                    else:
+                        st.session_state.search_results = search_youtube(query, max_results)
                     st.session_state.active_video = None
                     st.session_state.preview_video_id_for_initial = ""
                 except Exception as exc:

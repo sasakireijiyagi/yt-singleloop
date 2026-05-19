@@ -726,7 +726,6 @@ st.title("YouTube Loop Trainer")
 st.caption("YouTubeの一部分をくり返し再生して、英語発表やシャドーイングや音楽ループに使う簡易アプリです。")
 
 if yt_dlp is None:
-    st.info("検索機能はローカル版のみ利用できます。YouTube URLを直接入力してください。")
 
 initialise_session_state()
 
@@ -941,13 +940,13 @@ with st.sidebar:
 active_video = st.session_state.active_video
 
 if active_video is None:
-    st.info("左のサイドバーで動画を検索し、候補を選んでから **動画を選択** を押してください。")
+    st.info("左のサイドバーにYouTube URLを入力して、動画を選択してください。")
     st.stop()
 
 selected_video_id = active_video.get("video_id", "")
 
 if not selected_video_id:
-    st.info("左のサイドバーでYouTube動画を検索するか、URLを入力してください。")
+    st.info("左のサイドバーにYouTube URLを入力して、動画を選択してください。")
     st.stop()
 
 start_sec = float(st.session_state.applied_start_sec)

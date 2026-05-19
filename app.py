@@ -725,8 +725,6 @@ def sync_initial_end_to_video_if_needed(selected_item: dict[str, Any] | None) ->
 st.title("YouTube Loop Trainer")
 st.caption("YouTubeの一部分をくり返し再生して、英語発表やシャドーイングや音楽ループに使う簡易アプリです。")
 
-if yt_dlp is None:
-
 initialise_session_state()
 
 selected_for_preview: dict[str, Any] | None = None

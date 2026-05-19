@@ -735,11 +735,14 @@ selected_for_preview: dict[str, Any] | None = None
 with st.sidebar:
     st.header("動画")
 
-    source_mode = st.radio(
-        "動画の選び方",
-        ["YouTube検索", "URLを直接貼る"],
-        horizontal=False,
-    )
+    if yt_dlp is not None:
+        source_mode = st.radio(
+            "動画の選び方",
+            ["YouTube検索", "URLを直接貼る"],
+            horizontal=False,
+        )
+    else:
+        source_mode = "URLを直接貼る"
 
     if source_mode == "YouTube検索":
         with st.form("youtube_search_form", clear_on_submit=False):

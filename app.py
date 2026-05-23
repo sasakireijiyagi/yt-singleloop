@@ -756,6 +756,7 @@ def initialise_session_state() -> None:
         "loop_end_sec_input": 10.0,
         "initial_end_to_video_end": True,
         "preview_video_id_for_initial": "",
+        "just_saved": False,
     }
 
     for key, value in defaults.items():
@@ -1137,7 +1138,11 @@ if st.button("このループを保存", type="primary"):
         localStorage.setItem('yt_loops', JSON.stringify(loops));
         'saved';
     """)
-    st.success("保存しました！サイドバーの「保存済みループ」から読み込めます。")
+    st.session_state["just_saved"] = True
+    st.rerun()
+
+if st.session_state.pop("just_saved", False):
+    st.success("保存しました！")
 
 with st.expander("使い方"):
     st.markdown(

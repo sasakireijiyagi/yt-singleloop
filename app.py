@@ -400,6 +400,20 @@ def render_player(
       font-weight: bold;
     }}
 
+    @media (max-width: 600px) {{
+      button {{
+        font-size: 13px;
+        padding: 8px 10px;
+      }}
+      button.adjust {{
+        font-size: 12px;
+        padding: 6px 8px;
+      }}
+      .adjust-row {{
+        gap: 4px 6px;
+      }}
+    }}
+
     .status {{
       font-size: 14px;
       color: #555;
@@ -862,6 +876,21 @@ def sync_initial_end_to_video_if_needed(selected_item: dict[str, Any] | None) ->
 
     set_loop_inputs_from_seconds(start_sec, duration_sec)
 
+
+st.markdown("""
+<style>
+@media screen and (max-width: 768px) {
+    .main .block-container {
+        max-width: 100% !important;
+        padding-left: 0.75rem !important;
+        padding-right: 0.75rem !important;
+    }
+    section[data-testid="stSidebar"] > div {
+        width: 80vw !important;
+    }
+}
+</style>
+""", unsafe_allow_html=True)
 
 st.title("YouTube Loop Trainer")
 st.caption("YouTubeの一部分をくり返し再生して、英語発表やシャドーイングや音楽ループに使う簡易アプリです。")

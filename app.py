@@ -809,6 +809,7 @@ def initialise_session_state() -> None:
         "initial_end_to_video_end": True,
         "preview_video_id_for_initial": "",
         "just_saved": False,
+        "pending_save_loop": None,
     }
 
     for key, value in defaults.items():
@@ -1075,10 +1076,11 @@ with st.sidebar:
         step=40,
     )
 
-    if saved_loops:
-        st.divider()
-        st.header("保存済みループ")
-        for i, loop in enumerate(saved_loops):
+    st.divider()
+    st.header("保存済みループ")
+    if not saved_loops:
+        st.caption("まだ保存されたループはありません。")
+    for i, loop in enumerate(saved_loops):
             title = loop.get("title", "Untitled")
             label = loop.get("label", "")
             st.caption(f"**{title}**  \n{label}")
@@ -1175,7 +1177,7 @@ save_label = st.text_input(
     key="save_loop_label",
 )
 if st.button("このループを保存", type="primary"):
-    new_loop = {
+    st.session_state["pending_save_loop"] = {
         "title": active_video.get("title", "Untitled"),
         "channel": active_video.get("channel", ""),
         "video_id": selected_video_id,
@@ -1184,14 +1186,28 @@ if st.button("このループを保存", type="primary"):
         "end_sec": end_sec,
         "label": save_label if save_label else f"{format_loop_time(start_sec)} 〜 {format_loop_time(end_sec)}",
     }
-    st_javascript(f"""
+
+# 保存JSをボタン条件の外で描画し、rerunをまたいでも実行されるようにする
+if st.session_state.get("pending_save_loop"):
+    _pending = st.session_state["pending_save_loop"]
+    _save_result = st_javascript(f"""
+        var newLoop = {json.dumps(_pending)};
         var loops = JSON.parse(localStorage.getItem('yt_loops') || '[]');
-        loops.push({json.dumps(new_loop)});
-        localStorage.setItem('yt_loops', JSON.stringify(loops));
+        var exists = loops.some(function(l) {{
+            return l.video_id === newLoop.video_id &&
+                   Math.abs(l.start_sec - newLoop.start_sec) < 0.05 &&
+                   Math.abs(l.end_sec - newLoop.end_sec) < 0.05;
+        }});
+        if (!exists) {{
+            loops.push(newLoop);
+            localStorage.setItem('yt_loops', JSON.stringify(loops));
+        }}
         'saved';
     """)
-    st.session_state["just_saved"] = True
-    st.rerun()
+    if _save_result == "saved":
+        st.session_state["pending_save_loop"] = None
+        st.session_state["just_saved"] = True
+        st.rerun()
 
 if st.session_state.pop("just_saved", False):
     st.success("保存しました！")

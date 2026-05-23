@@ -995,7 +995,24 @@ with st.sidebar:
         st.caption("選択しただけでは再生しません。下のボタンでプレイヤーに読み込みます。")
 
         if selected_for_preview.get("thumbnail"):
-            st.image(selected_for_preview["thumbnail"], use_container_width=True)
+            _thumb_url = selected_for_preview["thumbnail"]
+            components.html(f"""
+            <div onclick="selectVideo()" style="cursor:pointer;position:relative;line-height:0;">
+              <img src="{_thumb_url}" style="width:100%;border-radius:8px;display:block;">
+              <div style="position:absolute;bottom:0;left:0;right:0;background:linear-gradient(transparent,rgba(0,0,0,0.55));padding:8px;border-radius:0 0 8px 8px;color:white;font-size:12px;text-align:center;">タップして選択</div>
+            </div>
+            <script>
+            function selectVideo() {{
+              var buttons = window.parent.document.querySelectorAll('button');
+              for (var i = 0; i < buttons.length; i++) {{
+                if (buttons[i].innerText.trim() === '動画を選択') {{
+                  buttons[i].click();
+                  return;
+                }}
+              }}
+            }}
+            </script>
+            """, height=180)
 
         st.markdown(f"**{selected_for_preview.get('title', 'Untitled')}**")
         meta_parts = []

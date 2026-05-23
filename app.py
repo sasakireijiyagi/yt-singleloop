@@ -278,8 +278,6 @@ def search_youtube(query: str, max_results: int = 8) -> list[dict[str, Any]]:
     return results
 
 
-_comp_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "_component")
-_saved_loops_widget = components.declare_component("saved_loops", path=_comp_dir)
 
 
 def result_label(item: dict[str, Any]) -> str:
@@ -836,6 +834,7 @@ def initialise_session_state() -> None:
         "preview_video_id_for_initial": "",
         "just_saved": False,
         "pending_save_loop": None,
+        "saved_loops": [],
     }
 
     for key, value in defaults.items():
@@ -896,11 +895,6 @@ st.title("YouTube Loop Trainer")
 st.caption("YouTubeの一部分をくり返し再生して、英語発表やシャドーイングや音楽ループに使う簡易アプリです。")
 
 initialise_session_state()
-
-# pending_save をサイドバー描画前に取り出す
-_pending_save_json = "null"
-if st.session_state.get("pending_save_loop"):
-    _pending_save_json = json.dumps(st.session_state.pop("pending_save_loop"))
 
 selected_for_preview: dict[str, Any] | None = None
 
@@ -1131,21 +1125,27 @@ with st.sidebar:
 
     st.divider()
     st.header("保存済みループ")
-    _pending_save = json.loads(_pending_save_json) if _pending_save_json != "null" else None
-    _loop_result = _saved_loops_widget(pending_save=_pending_save, key="saved_loops_sidebar")
-    if _loop_result and _loop_result.get("action") == "load":
-        _ld = _loop_result["loop"]
-        _item = {
-            "video_id": _ld["video_id"],
-            "title": _ld.get("title", ""),
-            "channel": _ld.get("channel", ""),
-            "duration": None,
-            "duration_text": "",
-            "webpage_url": _ld.get("url", ""),
-            "thumbnail": youtube_thumbnail_url(_ld["video_id"]),
-        }
-        set_active_video(_item, _ld["start_sec"], _ld["end_sec"], False)
-        st.rerun()
+    _saved_loops = st.session_state.get("saved_loops", [])
+    if not _saved_loops:
+        st.caption("まだ保存されたループはありません。")
+    for _i, _lp in enumerate(_saved_loops):
+        st.caption(f"**{_lp.get('title', 'Untitled')}**  \n{_lp.get('label', '')}")
+        _lc, _ld_col = st.columns(2)
+        if _lc.button("読み込む", key=f"load_lp_{_i}", use_container_width=True):
+            _it = {
+                "video_id": _lp["video_id"],
+                "title": _lp.get("title", ""),
+                "channel": _lp.get("channel", ""),
+                "duration": None,
+                "duration_text": "",
+                "webpage_url": _lp.get("url", ""),
+                "thumbnail": youtube_thumbnail_url(_lp["video_id"]),
+            }
+            set_active_video(_it, _lp["start_sec"], _lp["end_sec"], False)
+            st.rerun()
+        if _ld_col.button("削除", key=f"del_lp_{_i}", use_container_width=True):
+            st.session_state["saved_loops"].pop(_i)
+            st.rerun()
 
 
 active_video = st.session_state.active_video
@@ -1216,7 +1216,7 @@ save_label = st.text_input(
     key="save_loop_label",
 )
 if st.button("このループを保存", type="primary"):
-    st.session_state["pending_save_loop"] = {
+    _new_loop = {
         "title": active_video.get("title", "Untitled"),
         "channel": active_video.get("channel", ""),
         "video_id": selected_video_id,
@@ -1225,8 +1225,20 @@ if st.button("このループを保存", type="primary"):
         "end_sec": end_sec,
         "label": save_label if save_label else f"{format_loop_time(start_sec)} 〜 {format_loop_time(end_sec)}",
     }
-    st.success("保存しました！サイドバーの「保存済みループ」に追加されます。")
-    st.rerun()
+    # 重複チェック（同じ動画・同じ区間）
+    _existing = st.session_state.get("saved_loops", [])
+    _is_dup = any(
+        l["video_id"] == _new_loop["video_id"]
+        and abs(l["start_sec"] - _new_loop["start_sec"]) < 0.05
+        and abs(l["end_sec"] - _new_loop["end_sec"]) < 0.05
+        for l in _existing
+    )
+    if _is_dup:
+        st.info("同じループはすでに保存されています。")
+    else:
+        st.session_state.setdefault("saved_loops", []).append(_new_loop)
+        st.success("保存しました！サイドバーの「保存済みループ」から読み込めます。")
+        st.rerun()
 
 with st.expander("使い方"):
     st.markdown(

@@ -375,6 +375,27 @@ def render_player(
       background: #444;
     }}
 
+    button.adjust {{
+      background: #555;
+      font-size: 13px;
+      padding: 7px 10px;
+    }}
+
+    .adjust-row {{
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      align-items: center;
+      margin-top: 8px;
+      font-size: 13px;
+      color: #444;
+    }}
+
+    .adjust-label {{
+      min-width: 2em;
+      font-weight: bold;
+    }}
+
     .status {{
       font-size: 14px;
       color: #555;
@@ -411,6 +432,22 @@ def render_player(
       <div class="controls" style="margin-top: 8px;">
         <button class="marker" onclick="setStartHere()">ここを開始にする</button>
         <button class="marker" onclick="setEndHere()">ここを終了にする</button>
+      </div>
+
+      <div class="adjust-row">
+        <span class="adjust-label">開始</span>
+        <button class="adjust" onclick="adjustStart(-0.5)">−0.5</button>
+        <button class="adjust" onclick="adjustStart(-0.1)">−0.1</button>
+        <button class="adjust" onclick="adjustStart(+0.1)">+0.1</button>
+        <button class="adjust" onclick="adjustStart(+0.5)">+0.5</button>
+      </div>
+
+      <div class="adjust-row">
+        <span class="adjust-label">終了</span>
+        <button class="adjust" onclick="adjustEnd(-0.5)">−0.5</button>
+        <button class="adjust" onclick="adjustEnd(-0.1)">−0.1</button>
+        <button class="adjust" onclick="adjustEnd(+0.1)">+0.1</button>
+        <button class="adjust" onclick="adjustEnd(+0.5)">+0.5</button>
       </div>
 
       <div id="status" class="status">Player loaded. Press ループ開始.</div>
@@ -715,6 +752,21 @@ def render_player(
       }} else {{
         setStatus("End set to " + formatTime(localEndSec) + ". Start stays " + formatTime(localStartSec) + ".");
       }}
+    }}
+
+    function adjustStart(delta) {{
+      localStartSec = Math.max(0, Number((localStartSec + delta).toFixed(1)));
+      if (localStartSec >= localEndSec - 0.1) {{
+        localStartSec = Math.max(0, localEndSec - 0.1);
+      }}
+      updateLabels();
+      setStatus("開始: " + formatTime(localStartSec) + " → 終了: " + formatTime(localEndSec));
+    }}
+
+    function adjustEnd(delta) {{
+      localEndSec = Math.max(localStartSec + 0.1, Number((localEndSec + delta).toFixed(1)));
+      updateLabels();
+      setStatus("開始: " + formatTime(localStartSec) + " → 終了: " + formatTime(localEndSec));
     }}
 
     updateLabels();

@@ -1096,6 +1096,20 @@ with st.sidebar:
             format="%.1f",
             key="loop_start_sec_input",
         )
+    _s1, _s2, _s3, _s4 = st.columns(4)
+    _cur_start = combine_minutes_seconds(st.session_state.loop_start_min_input, st.session_state.loop_start_sec_input)
+    if _s1.button("−5秒", key="s_m5"):
+        set_loop_inputs_from_seconds(max(0.0, _cur_start - 5), combine_minutes_seconds(st.session_state.loop_end_min_input, st.session_state.loop_end_sec_input))
+        st.rerun()
+    if _s2.button("−1秒", key="s_m1"):
+        set_loop_inputs_from_seconds(max(0.0, _cur_start - 1), combine_minutes_seconds(st.session_state.loop_end_min_input, st.session_state.loop_end_sec_input))
+        st.rerun()
+    if _s3.button("+1秒", key="s_p1"):
+        set_loop_inputs_from_seconds(_cur_start + 1, combine_minutes_seconds(st.session_state.loop_end_min_input, st.session_state.loop_end_sec_input))
+        st.rerun()
+    if _s4.button("+5秒", key="s_p5"):
+        set_loop_inputs_from_seconds(_cur_start + 5, combine_minutes_seconds(st.session_state.loop_end_min_input, st.session_state.loop_end_sec_input))
+        st.rerun()
 
     st.caption("初期終了")
     end_col1, end_col2 = st.columns(2)
@@ -1117,6 +1131,21 @@ with st.sidebar:
             key="loop_end_sec_input",
             disabled=end_to_video_end,
         )
+    if not end_to_video_end:
+        _e1, _e2, _e3, _e4 = st.columns(4)
+        _cur_end = combine_minutes_seconds(st.session_state.loop_end_min_input, st.session_state.loop_end_sec_input)
+        if _e1.button("−5秒", key="e_m5"):
+            set_loop_inputs_from_seconds(combine_minutes_seconds(st.session_state.loop_start_min_input, st.session_state.loop_start_sec_input), max(0.0, _cur_end - 5))
+            st.rerun()
+        if _e2.button("−1秒", key="e_m1"):
+            set_loop_inputs_from_seconds(combine_minutes_seconds(st.session_state.loop_start_min_input, st.session_state.loop_start_sec_input), max(0.0, _cur_end - 1))
+            st.rerun()
+        if _e3.button("+1秒", key="e_p1"):
+            set_loop_inputs_from_seconds(combine_minutes_seconds(st.session_state.loop_start_min_input, st.session_state.loop_start_sec_input), _cur_end + 1)
+            st.rerun()
+        if _e4.button("+5秒", key="e_p5"):
+            set_loop_inputs_from_seconds(combine_minutes_seconds(st.session_state.loop_start_min_input, st.session_state.loop_start_sec_input), _cur_end + 5)
+            st.rerun()
 
     initial_start_sec, initial_end_sec = get_initial_loop_seconds()
 

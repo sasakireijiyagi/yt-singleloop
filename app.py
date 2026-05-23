@@ -3,6 +3,7 @@ from typing import Any
 
 import streamlit as st
 import streamlit.components.v1 as components
+from streamlit_javascript import st_javascript
 
 
 st.set_page_config(
@@ -801,6 +802,15 @@ st.caption("YouTubeの一部分をくり返し再生して、英語発表やシ�
 
 initialise_session_state()
 
+# localStorageから保存済みループを読み込む
+_raw_loops = st_javascript("localStorage.getItem('yt_loops') || '[]'")
+saved_loops: list[dict[str, Any]] = []
+if isinstance(_raw_loops, str):
+    try:
+        saved_loops = json.loads(_raw_loops)
+    except Exception:
+        saved_loops = []
+
 selected_for_preview: dict[str, Any] | None = None
 
 with st.sidebar:
@@ -1012,6 +1022,37 @@ with st.sidebar:
         step=40,
     )
 
+    if saved_loops:
+        st.divider()
+        st.header("保存済みループ")
+        for i, loop in enumerate(saved_loops):
+            title = loop.get("title", "Untitled")
+            label = loop.get("label", "")
+            st.caption(f"**{title}**  \n{label}")
+            col_load, col_del = st.columns(2)
+            with col_load:
+                if st.button("読み込む", key=f"load_loop_{i}", use_container_width=True):
+                    item = {
+                        "video_id": loop["video_id"],
+                        "title": loop["title"],
+                        "channel": loop.get("channel", ""),
+                        "duration": None,
+                        "duration_text": "",
+                        "webpage_url": loop["url"],
+                        "thumbnail": youtube_thumbnail_url(loop["video_id"]),
+                    }
+                    set_active_video(item, loop["start_sec"], loop["end_sec"], False)
+                    st.rerun()
+            with col_del:
+                if st.button("削除", key=f"del_loop_{i}", use_container_width=True):
+                    st_javascript(f"""
+                        var loops = JSON.parse(localStorage.getItem('yt_loops') || '[]');
+                        loops.splice({i}, 1);
+                        localStorage.setItem('yt_loops', JSON.stringify(loops));
+                        'deleted';
+                    """)
+                    st.rerun()
+
 
 active_video = st.session_state.active_video
 
@@ -1072,6 +1113,31 @@ render_player(
     player_width=int(player_width),
     end_at_video_end=end_at_video_end,
 )
+
+st.divider()
+st.subheader("ループを保存")
+save_label = st.text_input(
+    "メモ（省略可）",
+    placeholder="例：イントロ、サビ、むずかしいとこ",
+    key="save_loop_label",
+)
+if st.button("このループを保存", type="primary"):
+    new_loop = {
+        "title": active_video.get("title", "Untitled"),
+        "channel": active_video.get("channel", ""),
+        "video_id": selected_video_id,
+        "url": selected_video_url,
+        "start_sec": start_sec,
+        "end_sec": end_sec,
+        "label": save_label if save_label else f"{format_loop_time(start_sec)} 〜 {format_loop_time(end_sec)}",
+    }
+    st_javascript(f"""
+        var loops = JSON.parse(localStorage.getItem('yt_loops') || '[]');
+        loops.push({json.dumps(new_loop)});
+        localStorage.setItem('yt_loops', JSON.stringify(loops));
+        'saved';
+    """)
+    st.success("保存しました！サイドバーの「保存済みループ」から読み込めます。")
 
 with st.expander("使い方"):
     st.markdown(

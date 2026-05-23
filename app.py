@@ -14,7 +14,6 @@ st.set_page_config(
 
 import json
 import os
-import tempfile
 import urllib.parse
 import urllib.request
 
@@ -279,70 +278,7 @@ def search_youtube(query: str, max_results: int = 8) -> list[dict[str, Any]]:
     return results
 
 
-_SAVED_LOOPS_HTML = """<!DOCTYPE html>
-<html><head><style>
-  body{margin:0;padding:4px;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;font-size:13px;}
-  .item{margin-bottom:8px;padding:8px;border:1px solid #e5e5e5;border-radius:8px;background:#fafafa;}
-  .title{font-weight:bold;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-bottom:2px;}
-  .lbl{color:#666;font-size:12px;margin-bottom:6px;}
-  .btn{font-size:12px;padding:4px 10px;border:none;border-radius:999px;cursor:pointer;margin-right:4px;}
-  .bl{background:#111;color:white;}.bd{background:#ddd;color:#333;}
-  .btn:hover{opacity:0.8;}
-  .empty{color:#999;font-size:12px;padding:4px;}
-</style></head><body>
-<div id="c"></div>
-<script>
-var loops=[];
-function send(v){window.parent.postMessage({isStreamlitMessage:true,type:"streamlit:setComponentValue",value:v},"*");}
-function setHeight(h){window.parent.postMessage({isStreamlitMessage:true,type:"streamlit:setFrameHeight",height:h},"*");}
-function renderList(){
-  var c=document.getElementById("c");
-  c.innerHTML="";
-  loops=JSON.parse(localStorage.getItem("yt_loops")||"[]");
-  if(loops.length===0){
-    c.innerHTML='<div class="empty">まだ保存されたループはありません。</div>';
-    setHeight(40);
-  } else {
-    loops.forEach(function(loop,i){
-      var d=document.createElement("div");
-      d.className="item";
-      d.innerHTML='<div class="title" title="'+loop.title+'">'+loop.title+'</div>'+
-        '<div class="lbl">'+loop.label+'</div>'+
-        '<button class="btn bl" onclick="loadLoop('+i+')">読み込む</button>'+
-        '<button class="btn bd" onclick="delLoop('+i+')">削除</button>';
-      c.appendChild(d);
-    });
-    setHeight(loops.length*86+16);
-  }
-}
-function loadLoop(i){send({action:"load",loop:loops[i]});}
-function delLoop(i){
-  loops.splice(i,1);
-  localStorage.setItem("yt_loops",JSON.stringify(loops));
-  renderList();
-  send({action:"deleted"});
-}
-window.addEventListener("message",function(e){
-  if(!e.data||e.data.type!=="streamlit:render")return;
-  var args=e.data.args||{};
-  var pending=args.pending_save||null;
-  if(pending){
-    var ls=JSON.parse(localStorage.getItem("yt_loops")||"[]");
-    var exists=ls.some(function(l){
-      return l.video_id===pending.video_id&&
-             Math.abs((l.start_sec||0)-(pending.start_sec||0))<0.05&&
-             Math.abs((l.end_sec||0)-(pending.end_sec||0))<0.05;
-    });
-    if(!exists){ls.push(pending);localStorage.setItem("yt_loops",JSON.stringify(ls));}
-  }
-  renderList();
-});
-window.parent.postMessage({isStreamlitMessage:true,type:"streamlit:componentReady",apiVersion:1},"*");
-</script></body></html>"""
-
-_comp_dir = tempfile.mkdtemp()
-with open(os.path.join(_comp_dir, "index.html"), "w", encoding="utf-8") as _f:
-    _f.write(_SAVED_LOOPS_HTML)
+_comp_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "_component")
 _saved_loops_widget = components.declare_component("saved_loops", path=_comp_dir)
 
 

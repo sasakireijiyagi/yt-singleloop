@@ -13,6 +13,8 @@ st.set_page_config(
 
 
 import json
+import os
+import tempfile
 import urllib.parse
 import urllib.request
 
@@ -277,57 +279,71 @@ def search_youtube(query: str, max_results: int = 8) -> list[dict[str, Any]]:
     return results
 
 
-def render_saved_loops_component(pending_save_json: str = "null") -> None:
-    html = f"""<!DOCTYPE html>
+_SAVED_LOOPS_HTML = """<!DOCTYPE html>
 <html><head><style>
-  body {{ margin:0; padding:0; font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; font-size:13px; }}
-  .item {{ margin-bottom:8px; padding:8px; border:1px solid #e5e5e5; border-radius:8px; background:#fafafa; }}
-  .title {{ font-weight:bold; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; margin-bottom:2px; }}
-  .label {{ color:#666; font-size:12px; margin-bottom:6px; }}
-  .btn {{ font-size:12px; padding:4px 10px; border:none; border-radius:999px; cursor:pointer; margin-right:4px; }}
-  .btn-load {{ background:#111; color:white; }}
-  .btn-del {{ background:#ddd; color:#333; }}
-  .btn:hover {{ opacity:0.8; }}
-  .empty {{ color:#999; font-size:12px; padding:4px; }}
+  body{margin:0;padding:4px;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;font-size:13px;}
+  .item{margin-bottom:8px;padding:8px;border:1px solid #e5e5e5;border-radius:8px;background:#fafafa;}
+  .title{font-weight:bold;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-bottom:2px;}
+  .lbl{color:#666;font-size:12px;margin-bottom:6px;}
+  .btn{font-size:12px;padding:4px 10px;border:none;border-radius:999px;cursor:pointer;margin-right:4px;}
+  .bl{background:#111;color:white;}.bd{background:#ddd;color:#333;}
+  .btn:hover{opacity:0.8;}
+  .empty{color:#999;font-size:12px;padding:4px;}
 </style></head><body>
 <div id="c"></div>
 <script>
-  var pending = {pending_save_json};
-  if (pending) {{
-    var loops = JSON.parse(localStorage.getItem('yt_loops') || '[]');
-    var exists = loops.some(function(l) {{
-      return l.video_id === pending.video_id &&
-             Math.abs((l.start_sec||0) - (pending.start_sec||0)) < 0.05 &&
-             Math.abs((l.end_sec||0) - (pending.end_sec||0)) < 0.05;
-    }});
-    if (!exists) {{ loops.push(pending); localStorage.setItem('yt_loops', JSON.stringify(loops)); }}
-  }}
-  var loops = JSON.parse(localStorage.getItem('yt_loops') || '[]');
-  var c = document.getElementById('c');
-  if (loops.length === 0) {{
-    c.innerHTML = '<div class="empty">まだ保存されたループはありません。</div>';
-  }} else {{
-    loops.forEach(function(loop, i) {{
-      var d = document.createElement('div');
-      d.className = 'item';
-      d.innerHTML =
-        '<div class="title" title="'+loop.title+'">'+loop.title+'</div>'+
-        '<div class="label">'+loop.label+'</div>'+
-        '<button class="btn btn-load" onclick="load('+i+')">読み込む</button>'+
-        '<button class="btn btn-del" onclick="del('+i+')">削除</button>';
+var loops=[];
+function send(v){window.parent.postMessage({isStreamlitMessage:true,type:"streamlit:setComponentValue",value:v},"*");}
+function setHeight(h){window.parent.postMessage({isStreamlitMessage:true,type:"streamlit:setFrameHeight",height:h},"*");}
+function renderList(){
+  var c=document.getElementById("c");
+  c.innerHTML="";
+  loops=JSON.parse(localStorage.getItem("yt_loops")||"[]");
+  if(loops.length===0){
+    c.innerHTML='<div class="empty">まだ保存されたループはありません。</div>';
+    setHeight(40);
+  } else {
+    loops.forEach(function(loop,i){
+      var d=document.createElement("div");
+      d.className="item";
+      d.innerHTML='<div class="title" title="'+loop.title+'">'+loop.title+'</div>'+
+        '<div class="lbl">'+loop.label+'</div>'+
+        '<button class="btn bl" onclick="loadLoop('+i+')">読み込む</button>'+
+        '<button class="btn bd" onclick="delLoop('+i+')">削除</button>';
       c.appendChild(d);
-    }});
-  }}
-  function load(i) {{
-    window.parent.location.search = 'yt_load=' + encodeURIComponent(JSON.stringify(loops[i]));
-  }}
-  function del(i) {{
-    loops.splice(i, 1);
-    localStorage.setItem('yt_loops', JSON.stringify(loops));
-    location.reload();
-  }}
+    });
+    setHeight(loops.length*86+16);
+  }
+}
+function loadLoop(i){send({action:"load",loop:loops[i]});}
+function delLoop(i){
+  loops.splice(i,1);
+  localStorage.setItem("yt_loops",JSON.stringify(loops));
+  renderList();
+  send({action:"deleted"});
+}
+window.addEventListener("message",function(e){
+  if(!e.data||e.data.type!=="streamlit:render")return;
+  var args=e.data.args||{};
+  var pending=args.pending_save||null;
+  if(pending){
+    var ls=JSON.parse(localStorage.getItem("yt_loops")||"[]");
+    var exists=ls.some(function(l){
+      return l.video_id===pending.video_id&&
+             Math.abs((l.start_sec||0)-(pending.start_sec||0))<0.05&&
+             Math.abs((l.end_sec||0)-(pending.end_sec||0))<0.05;
+    });
+    if(!exists){ls.push(pending);localStorage.setItem("yt_loops",JSON.stringify(ls));}
+  }
+  renderList();
+});
+window.parent.postMessage({isStreamlitMessage:true,type:"streamlit:componentReady",apiVersion:1},"*");
 </script></body></html>"""
-    components.html(html, height=220, scrolling=True)
+
+_comp_dir = tempfile.mkdtemp()
+with open(os.path.join(_comp_dir, "index.html"), "w", encoding="utf-8") as _f:
+    _f.write(_SAVED_LOOPS_HTML)
+_saved_loops_widget = components.declare_component("saved_loops", path=_comp_dir)
 
 
 def result_label(item: dict[str, Any]) -> str:
@@ -908,25 +924,6 @@ st.caption("YouTubeの一部分をくり返し再生して、英語発表やシ�
 
 initialise_session_state()
 
-# 保存済みループの読み込み（URLパラメータ経由）
-if "yt_load" in st.query_params:
-    try:
-        _loop_data = json.loads(urllib.parse.unquote(st.query_params["yt_load"]))
-        _item = {
-            "video_id": _loop_data["video_id"],
-            "title": _loop_data.get("title", ""),
-            "channel": _loop_data.get("channel", ""),
-            "duration": None,
-            "duration_text": "",
-            "webpage_url": _loop_data.get("url", ""),
-            "thumbnail": youtube_thumbnail_url(_loop_data["video_id"]),
-        }
-        set_active_video(_item, _loop_data["start_sec"], _loop_data["end_sec"], False)
-    except Exception:
-        pass
-    del st.query_params["yt_load"]
-    st.rerun()
-
 # pending_save をサイドバー描画前に取り出す
 _pending_save_json = "null"
 if st.session_state.get("pending_save_loop"):
@@ -1174,7 +1171,21 @@ with st.sidebar:
 
     st.divider()
     st.header("保存済みループ")
-    render_saved_loops_component(_pending_save_json)
+    _pending_save = json.loads(_pending_save_json) if _pending_save_json != "null" else None
+    _loop_result = _saved_loops_widget(pending_save=_pending_save, key="saved_loops_sidebar")
+    if _loop_result and _loop_result.get("action") == "load":
+        _ld = _loop_result["loop"]
+        _item = {
+            "video_id": _ld["video_id"],
+            "title": _ld.get("title", ""),
+            "channel": _ld.get("channel", ""),
+            "duration": None,
+            "duration_text": "",
+            "webpage_url": _ld.get("url", ""),
+            "thumbnail": youtube_thumbnail_url(_ld["video_id"]),
+        }
+        set_active_video(_item, _ld["start_sec"], _ld["end_sec"], False)
+        st.rerun()
 
 
 active_video = st.session_state.active_video

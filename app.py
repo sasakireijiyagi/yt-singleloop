@@ -826,8 +826,11 @@ def render_player(
           window.parent.HTMLInputElement.prototype, "value"
         ).set;
         nativeSetter.call(target, data);
+        // input → blur の順で発火させる（blurでStreamlitが値を即座に確定する）
         target.dispatchEvent(new Event("input", {{ bubbles: true }}));
-        // Reactが処理する時間を少し待ってから保存ボタンをクリック
+        target.dispatchEvent(new Event("change", {{ bubbles: true }}));
+        target.dispatchEvent(new FocusEvent("blur", {{ bubbles: true }}));
+        // 確定後に保存ボタンをクリック
         setTimeout(function() {{
           var btns = window.parent.document.querySelectorAll("button");
           for (var j = 0; j < btns.length; j++) {{
@@ -838,7 +841,7 @@ def render_player(
             }}
           }}
           msg.textContent = "保存ボタンが見つかりません";
-        }}, 200);
+        }}, 100);
       }} catch(e) {{
         msg.textContent = "エラー: " + e.message;
       }}

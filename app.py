@@ -478,6 +478,13 @@ def render_player(
       <div class="hint">
         左サイドバーは初期値です。動画を見ながらの調整は、このプレイヤー内の「ここを開始にする」「ここを終了にする」で行えます。
       </div>
+
+      <div class="adjust-row" style="margin-top:14px;padding-top:10px;border-top:1px solid #ddd;flex-wrap:wrap;gap:6px;">
+        <input type="text" id="pSaveLabel" placeholder="メモ（省略可）"
+          style="flex:1;min-width:120px;font-size:13px;padding:6px 10px;border:1px solid #ccc;border-radius:8px;outline:none;">
+        <button class="adjust" style="background:#1a7f54;color:white;padding:7px 14px;" onclick="saveFromPlayer()">この時間で保存</button>
+        <span id="pSaveMsg" style="font-size:12px;color:#555;align-self:center;"></span>
+      </div>
     </div>
   </div>
 
@@ -793,13 +800,36 @@ def render_player(
       setStatus("開始: " + formatTime(localStartSec) + " → 終了: " + formatTime(localEndSec));
     }}
 
+    function saveFromPlayer() {{
+      var label = document.getElementById("pSaveLabel").value || "";
+      var msg = document.getElementById("pSaveMsg");
+      try {{
+        var url = new URL(window.parent.location.href);
+        url.searchParams.set("_ps_start", localStartSec.toFixed(2));
+        url.searchParams.set("_ps_end",   localEndSec.toFixed(2));
+        url.searchParams.set("_ps_label", label);
+        window.parent.history.replaceState(null, "", url.toString());
+        var btns = window.parent.document.querySelectorAll("button");
+        for (var i = 0; i < btns.length; i++) {{
+          if (btns[i].innerText.trim() === "このループを保存") {{
+            btns[i].click();
+            msg.textContent = "送信中...";
+            return;
+          }}
+        }}
+        msg.textContent = "保存ボタンが見つかりません";
+      }} catch(e) {{
+        msg.textContent = "エラー: " + e.message;
+      }}
+    }}
+
     updateLabels();
   </script>
 </body>
 </html>
 """
 
-    components.html(html, height=player_height + 220)
+    components.html(html, height=player_height + 270)
 
 
 def set_active_video(item: dict[str, Any], start_sec: float, end_sec: float, end_at_video_end: bool) -> None:
@@ -1125,6 +1155,21 @@ with st.sidebar:
 
 
 
+# プレイヤー内「この時間で保存」ボタンからURLパラメータ経由で渡された値を先読みする
+_ps_start_raw = st.query_params.get("_ps_start")
+_ps_end_raw   = st.query_params.get("_ps_end")
+_ps_label_raw = st.query_params.get("_ps_label", "")
+_player_save: dict | None = None
+if _ps_start_raw and _ps_end_raw:
+    try:
+        _player_save = {
+            "start": float(_ps_start_raw),
+            "end":   float(_ps_end_raw),
+            "label": urllib.parse.unquote(_ps_label_raw),
+        }
+    except ValueError:
+        pass
+
 active_video = st.session_state.active_video
 
 if active_video is None:
@@ -1191,29 +1236,34 @@ with col_player:
 
     st.divider()
     st.subheader("ループを保存")
-    st.caption(
-        "サイドバーで設定して「動画を選択」したときの開始・終了時間が保存されます。"
-        "プレイヤー内で調整した場合は、サイドバーの値も合わせて更新してください。"
-    )
+    st.caption("プレイヤー内の「この時間で保存」ボタンが使いやすいです。下のボタンはサイドバーで設定した初期値を保存します。")
     save_label = st.text_input(
         "メモ（省略可）",
         placeholder="例：イントロ、サビ、むずかしいとこ",
         key="save_loop_label",
     )
     if st.button("このループを保存", type="primary"):
-        _save_label_str = (
-            save_label if save_label
-            else f"{format_loop_time(start_sec)} 〜 {format_loop_time(end_sec)}"
-        )
+        # プレイヤー内ボタン経由なら URL パラメータの値を優先する
+        if _player_save:
+            _use_start = _player_save["start"]
+            _use_end   = _player_save["end"]
+            _use_label = _player_save["label"] or f"{format_loop_time(_use_start)} 〜 {format_loop_time(_use_end)}"
+            # パラメータを消去（次回から再適用されないように）
+            for _pk in ["_ps_start", "_ps_end", "_ps_label"]:
+                st.query_params.pop(_pk, None)
+        else:
+            _use_start = start_sec
+            _use_end   = end_sec
+            _use_label = save_label if save_label else f"{format_loop_time(start_sec)} 〜 {format_loop_time(end_sec)}"
         _new_loop = {
             "title": active_video.get("title", "Untitled"),
             "channel": active_video.get("channel", ""),
             "video_id": selected_video_id,
             "url": selected_video_url,
-            "start_sec": start_sec,
-            "end_sec": end_sec,
-            "end_at_video_end": end_at_video_end,
-            "label": _save_label_str,
+            "start_sec": _use_start,
+            "end_sec": _use_end,
+            "end_at_video_end": False,
+            "label": _use_label,
         }
         _existing = st.session_state.get("saved_loops", [])
         _is_dup = any(

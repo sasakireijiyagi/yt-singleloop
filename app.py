@@ -1191,34 +1191,76 @@ with col_player:
 
     st.divider()
     st.subheader("ループを保存")
+
+    # 動画が切り替わったときだけ保存用の時間入力を初期値にリセットする
+    if st.session_state.get("_save_input_for_video") != selected_video_id:
+        _sm0, _ss0 = split_minutes_seconds(start_sec)
+        _em0, _es0 = split_minutes_seconds(end_sec if not end_at_video_end else start_sec + 10.0)
+        st.session_state["save_time_start_min"] = _sm0
+        st.session_state["save_time_start_sec"] = _ss0
+        st.session_state["save_time_end_min"] = _em0
+        st.session_state["save_time_end_sec"] = _es0
+        st.session_state["_save_input_for_video"] = selected_video_id
+
+    st.caption(
+        "プレイヤー内で「ここを開始にする」「ここを終了にする」で確定した時刻を、"
+        "下の欄に入力してから保存してください。"
+    )
+    _sv_c1, _sv_c2 = st.columns(2)
+    with _sv_c1:
+        st.caption("開始")
+        _svm1, _svm2 = st.columns(2)
+        with _svm1:
+            _save_sm = st.number_input("分", min_value=0, step=1, key="save_time_start_min", label_visibility="collapsed")
+        with _svm2:
+            _save_ss = st.number_input("秒", min_value=0.0, max_value=59.9, step=0.1, format="%.1f", key="save_time_start_sec", label_visibility="collapsed")
+    with _sv_c2:
+        st.caption("終了")
+        _sem1, _sem2 = st.columns(2)
+        with _sem1:
+            _save_em = st.number_input("分 ", min_value=0, step=1, key="save_time_end_min", label_visibility="collapsed")
+        with _sem2:
+            _save_es = st.number_input("秒 ", min_value=0.0, max_value=59.9, step=0.1, format="%.1f", key="save_time_end_sec", label_visibility="collapsed")
+
+    _save_start_sec = combine_minutes_seconds(_save_sm, _save_ss)
+    _save_end_sec = combine_minutes_seconds(_save_em, _save_es)
+
     save_label = st.text_input(
         "メモ（省略可）",
         placeholder="例：イントロ、サビ、むずかしいとこ",
         key="save_loop_label",
     )
     if st.button("このループを保存", type="primary"):
-        _new_loop = {
-            "title": active_video.get("title", "Untitled"),
-            "channel": active_video.get("channel", ""),
-            "video_id": selected_video_id,
-            "url": selected_video_url,
-            "start_sec": start_sec,
-            "end_sec": end_sec,
-            "label": save_label if save_label else f"{format_loop_time(start_sec)} 〜 {format_loop_time(end_sec)}",
-        }
-        _existing = st.session_state.get("saved_loops", [])
-        _is_dup = any(
-            l["video_id"] == _new_loop["video_id"]
-            and abs(l["start_sec"] - _new_loop["start_sec"]) < 0.05
-            and abs(l["end_sec"] - _new_loop["end_sec"]) < 0.05
-            for l in _existing
-        )
-        if _is_dup:
-            st.info("同じループはすでに保存されています。")
+        if _save_end_sec <= _save_start_sec:
+            st.error("終了は開始より後の時刻にしてください。")
         else:
-            st.session_state.setdefault("saved_loops", []).append(_new_loop)
-            st.success("保存しました！")
-            st.rerun()
+            _save_label_str = (
+                save_label if save_label
+                else f"{format_loop_time(_save_start_sec)} 〜 {format_loop_time(_save_end_sec)}"
+            )
+            _new_loop = {
+                "title": active_video.get("title", "Untitled"),
+                "channel": active_video.get("channel", ""),
+                "video_id": selected_video_id,
+                "url": selected_video_url,
+                "start_sec": _save_start_sec,
+                "end_sec": _save_end_sec,
+                "end_at_video_end": False,
+                "label": _save_label_str,
+            }
+            _existing = st.session_state.get("saved_loops", [])
+            _is_dup = any(
+                l["video_id"] == _new_loop["video_id"]
+                and abs(l["start_sec"] - _new_loop["start_sec"]) < 0.05
+                and abs(l["end_sec"] - _new_loop["end_sec"]) < 0.05
+                for l in _existing
+            )
+            if _is_dup:
+                st.info("同じループはすでに保存されています。")
+            else:
+                st.session_state.setdefault("saved_loops", []).append(_new_loop)
+                st.success("保存しました！")
+                st.rerun()
 
 with col_saved:
     st.subheader("保存済みループ")
@@ -1240,7 +1282,14 @@ with col_saved:
                     "webpage_url": _lp.get("url", ""),
                     "thumbnail": youtube_thumbnail_url(_lp["video_id"]),
                 }
-                set_active_video(_it, _lp["start_sec"], _lp["end_sec"], False)
+                set_active_video(
+                    _it,
+                    _lp["start_sec"],
+                    _lp["end_sec"],
+                    _lp.get("end_at_video_end", False),
+                )
+                # 保存用時間入力もリセットさせる
+                st.session_state.pop("_save_input_for_video", None)
                 st.rerun()
             if _ld_col.button("削除", key=f"del_lp_{_i}", use_container_width=True):
                 st.session_state["saved_loops"].pop(_i)

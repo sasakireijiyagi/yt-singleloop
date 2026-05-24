@@ -1,9 +1,12 @@
 import re
+import os
+import json
+import urllib.parse
+import urllib.request
 from typing import Any
 
 import streamlit as st
 import streamlit.components.v1 as components
-
 
 st.set_page_config(
     page_title="YouTube Loop Trainer",
@@ -11,11 +14,9 @@ st.set_page_config(
     layout="wide",
 )
 
-
-import json
-import os
-import urllib.parse
-import urllib.request
+# 保存リレーコンポーネント（プレイヤーJS→Python の橋渡し）
+_comp_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "_component")
+_save_relay = components.declare_component("yt_save_relay", path=_comp_path)
 
 try:
     import yt_dlp
@@ -803,48 +804,14 @@ def render_player(
     function saveFromPlayer() {{
       var label = document.getElementById("pSaveLabel").value || "";
       var msg = document.getElementById("pSaveMsg");
-      try {{
-        // 親ウィンドウの隠しテキスト入力を探してReact互換のイベントで値を書き込む
-        var inputs = window.parent.document.querySelectorAll('input[type="text"]');
-        var target = null;
-        for (var i = 0; i < inputs.length; i++) {{
-          if (inputs[i].placeholder === "__player_data__") {{
-            target = inputs[i];
-            break;
-          }}
-        }}
-        if (!target) {{
-          msg.textContent = "チャンネル入力が見つかりません";
-          return;
-        }}
-        var data = JSON.stringify({{
-          start: localStartSec,
-          end: localEndSec,
-          label: label
-        }});
-        var nativeSetter = Object.getOwnPropertyDescriptor(
-          window.parent.HTMLInputElement.prototype, "value"
-        ).set;
-        nativeSetter.call(target, data);
-        // input → blur の順で発火させる（blurでStreamlitが値を即座に確定する）
-        target.dispatchEvent(new Event("input", {{ bubbles: true }}));
-        target.dispatchEvent(new Event("change", {{ bubbles: true }}));
-        target.dispatchEvent(new FocusEvent("blur", {{ bubbles: true }}));
-        // 確定後に保存ボタンをクリック
-        setTimeout(function() {{
-          var btns = window.parent.document.querySelectorAll("button");
-          for (var j = 0; j < btns.length; j++) {{
-            if (btns[j].innerText.trim() === "このループを保存") {{
-              btns[j].click();
-              msg.textContent = "保存中...";
-              return;
-            }}
-          }}
-          msg.textContent = "保存ボタンが見つかりません";
-        }}, 100);
-      }} catch(e) {{
-        msg.textContent = "エラー: " + e.message;
-      }}
+      var data = {{
+        start: localStartSec,
+        end: localEndSec,
+        label: label,
+        ts: Date.now()
+      }};
+      localStorage.setItem("yt_pending_save", JSON.stringify(data));
+      msg.textContent = "保存中... (数秒お待ちください)";
     }}
 
     updateLabels();
@@ -1248,66 +1215,39 @@ with col_player:
     st.caption("プレイヤー内の「この時間で保存」ボタンを使うと、調整した時間がそのまま保存されます。")
 
     # プレイヤーiframe → Python のデータ受け渡し用の隠しテキスト入力
-    st.markdown("""
-    <style>
-    div[data-testid="stTextInput"]:has(input[placeholder="__player_data__"]) {
-        display: none;
-    }
-    </style>
-    """, unsafe_allow_html=True)
-    _player_data_raw = st.text_input(
-        "player_data",
-        placeholder="__player_data__",
-        key="player_data_channel",
-        label_visibility="collapsed",
-    )
-
-    # プレイヤーから渡されたデータがあれば解析
-    _player_save: dict | None = None
-    if _player_data_raw:
-        try:
-            _d = json.loads(_player_data_raw)
-            _player_save = {
-                "start": float(_d["start"]),
-                "end":   float(_d["end"]),
-                "label": str(_d.get("label", "")),
+    # 保存リレーコンポーネント（localStorage経由でプレイヤーJSの値を受け取る）
+    _relay_result = _save_relay(key="save_relay")
+    if _relay_result and isinstance(_relay_result, dict):
+        _rts = int(_relay_result.get("ts", 0))
+        if _rts != st.session_state.get("_relay_processed_ts", -1):
+            st.session_state["_relay_processed_ts"] = _rts
+            _rs = float(_relay_result.get("start", start_sec))
+            _re = float(_relay_result.get("end", end_sec))
+            _rl = str(_relay_result.get("label", ""))
+            _new_loop = {
+                "title": active_video.get("title", "Untitled"),
+                "channel": active_video.get("channel", ""),
+                "video_id": selected_video_id,
+                "url": selected_video_url,
+                "start_sec": _rs,
+                "end_sec": _re,
+                "end_at_video_end": False,
+                "label": _rl or f"{format_loop_time(_rs)} 〜 {format_loop_time(_re)}",
             }
-        except Exception:
-            pass
-
-    if st.button("このループを保存", type="primary"):
-        if _player_save:
-            _use_start = _player_save["start"]
-            _use_end   = _player_save["end"]
-            _use_label = _player_save["label"] or f"{format_loop_time(_use_start)} 〜 {format_loop_time(_use_end)}"
-            st.session_state["player_data_channel"] = ""  # 受け取り済みなのでクリア
-        else:
-            _use_start = start_sec
-            _use_end   = end_sec
-            _use_label = f"{format_loop_time(start_sec)} 〜 {format_loop_time(end_sec)}"
-        _new_loop = {
-            "title": active_video.get("title", "Untitled"),
-            "channel": active_video.get("channel", ""),
-            "video_id": selected_video_id,
-            "url": selected_video_url,
-            "start_sec": _use_start,
-            "end_sec": _use_end,
-            "end_at_video_end": False,
-            "label": _use_label,
-        }
-        _existing = st.session_state.get("saved_loops", [])
-        _is_dup = any(
-            l["video_id"] == _new_loop["video_id"]
-            and abs(l["start_sec"] - _new_loop["start_sec"]) < 0.05
-            and abs(l["end_sec"] - _new_loop["end_sec"]) < 0.05
-            for l in _existing
-        )
-        if _is_dup:
-            st.info("同じループはすでに保存されています。")
-        else:
-            st.session_state.setdefault("saved_loops", []).append(_new_loop)
-            st.success("保存しました！")
+            _existing = st.session_state.get("saved_loops", [])
+            _is_dup = any(
+                l["video_id"] == _new_loop["video_id"]
+                and abs(l["start_sec"] - _new_loop["start_sec"]) < 0.05
+                and abs(l["end_sec"] - _new_loop["end_sec"]) < 0.05
+                for l in _existing
+            )
+            if not _is_dup:
+                st.session_state.setdefault("saved_loops", []).append(_new_loop)
+                st.session_state["_relay_save_msg"] = True
             st.rerun()
+
+    if st.session_state.pop("_relay_save_msg", False):
+        st.success("保存しました！")
 
 with col_saved:
     st.subheader("保存済みループ")

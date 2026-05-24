@@ -804,20 +804,41 @@ def render_player(
       var label = document.getElementById("pSaveLabel").value || "";
       var msg = document.getElementById("pSaveMsg");
       try {{
-        var url = new URL(window.parent.location.href);
-        url.searchParams.set("_ps_start", localStartSec.toFixed(2));
-        url.searchParams.set("_ps_end",   localEndSec.toFixed(2));
-        url.searchParams.set("_ps_label", label);
-        window.parent.history.replaceState(null, "", url.toString());
-        var btns = window.parent.document.querySelectorAll("button");
-        for (var i = 0; i < btns.length; i++) {{
-          if (btns[i].innerText.trim() === "このループを保存") {{
-            btns[i].click();
-            msg.textContent = "送信中...";
-            return;
+        // 親ウィンドウの隠しテキスト入力を探してReact互換のイベントで値を書き込む
+        var inputs = window.parent.document.querySelectorAll('input[type="text"]');
+        var target = null;
+        for (var i = 0; i < inputs.length; i++) {{
+          if (inputs[i].placeholder === "__player_data__") {{
+            target = inputs[i];
+            break;
           }}
         }}
-        msg.textContent = "保存ボタンが見つかりません";
+        if (!target) {{
+          msg.textContent = "チャンネル入力が見つかりません";
+          return;
+        }}
+        var data = JSON.stringify({{
+          start: localStartSec,
+          end: localEndSec,
+          label: label
+        }});
+        var nativeSetter = Object.getOwnPropertyDescriptor(
+          window.parent.HTMLInputElement.prototype, "value"
+        ).set;
+        nativeSetter.call(target, data);
+        target.dispatchEvent(new Event("input", {{ bubbles: true }}));
+        // Reactが処理する時間を少し待ってから保存ボタンをクリック
+        setTimeout(function() {{
+          var btns = window.parent.document.querySelectorAll("button");
+          for (var j = 0; j < btns.length; j++) {{
+            if (btns[j].innerText.trim() === "このループを保存") {{
+              btns[j].click();
+              msg.textContent = "保存中...";
+              return;
+            }}
+          }}
+          msg.textContent = "保存ボタンが見つかりません";
+        }}, 200);
       }} catch(e) {{
         msg.textContent = "エラー: " + e.message;
       }}
@@ -1155,21 +1176,6 @@ with st.sidebar:
 
 
 
-# プレイヤー内「この時間で保存」ボタンからURLパラメータ経由で渡された値を先読みする
-_ps_start_raw = st.query_params.get("_ps_start")
-_ps_end_raw   = st.query_params.get("_ps_end")
-_ps_label_raw = st.query_params.get("_ps_label", "")
-_player_save: dict | None = None
-if _ps_start_raw and _ps_end_raw:
-    try:
-        _player_save = {
-            "start": float(_ps_start_raw),
-            "end":   float(_ps_end_raw),
-            "label": urllib.parse.unquote(_ps_label_raw),
-        }
-    except ValueError:
-        pass
-
 active_video = st.session_state.active_video
 
 if active_video is None:
@@ -1236,25 +1242,46 @@ with col_player:
 
     st.divider()
     st.subheader("ループを保存")
-    st.caption("プレイヤー内の「この時間で保存」ボタンが使いやすいです。下のボタンはサイドバーで設定した初期値を保存します。")
-    save_label = st.text_input(
-        "メモ（省略可）",
-        placeholder="例：イントロ、サビ、むずかしいとこ",
-        key="save_loop_label",
+    st.caption("プレイヤー内の「この時間で保存」ボタンを使うと、調整した時間がそのまま保存されます。")
+
+    # プレイヤーiframe → Python のデータ受け渡し用の隠しテキスト入力
+    st.markdown("""
+    <style>
+    div[data-testid="stTextInput"]:has(input[placeholder="__player_data__"]) {
+        display: none;
+    }
+    </style>
+    """, unsafe_allow_html=True)
+    _player_data_raw = st.text_input(
+        "player_data",
+        placeholder="__player_data__",
+        key="player_data_channel",
+        label_visibility="collapsed",
     )
+
+    # プレイヤーから渡されたデータがあれば解析
+    _player_save: dict | None = None
+    if _player_data_raw:
+        try:
+            _d = json.loads(_player_data_raw)
+            _player_save = {
+                "start": float(_d["start"]),
+                "end":   float(_d["end"]),
+                "label": str(_d.get("label", "")),
+            }
+        except Exception:
+            pass
+
     if st.button("このループを保存", type="primary"):
-        # プレイヤー内ボタン経由なら URL パラメータの値を優先する
         if _player_save:
             _use_start = _player_save["start"]
             _use_end   = _player_save["end"]
             _use_label = _player_save["label"] or f"{format_loop_time(_use_start)} 〜 {format_loop_time(_use_end)}"
-            # パラメータを消去（次回から再適用されないように）
-            for _pk in ["_ps_start", "_ps_end", "_ps_label"]:
-                st.query_params.pop(_pk, None)
+            st.session_state["player_data_channel"] = ""  # 受け取り済みなのでクリア
         else:
             _use_start = start_sec
             _use_end   = end_sec
-            _use_label = save_label if save_label else f"{format_loop_time(start_sec)} 〜 {format_loop_time(end_sec)}"
+            _use_label = f"{format_loop_time(start_sec)} 〜 {format_loop_time(end_sec)}"
         _new_loop = {
             "title": active_video.get("title", "Untitled"),
             "channel": active_video.get("channel", ""),

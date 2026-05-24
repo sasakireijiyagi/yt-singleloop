@@ -3,6 +3,7 @@
 <script>
 var initialized = false;
 var lastSentTs = -1;
+var lastCurrentStr = "";
 
 function send(v) {
   window.parent.postMessage({
@@ -13,23 +14,41 @@ function send(v) {
   }, "*");
 }
 
-// localStorage を 300ms ごとにポーリングし、保存データがあれば Python へ送る
+// iframeを確実に動作させるため高さを設定
+window.parent.postMessage({
+  isStreamlitMessage: true,
+  type: "streamlit:setFrameHeight",
+  height: 1
+}, "*");
+
 setInterval(function() {
+  // 「この時間で保存」ボタン経由の保存
   var raw = localStorage.getItem("yt_pending_save");
-  if (!raw) return;
-  try {
-    var data = JSON.parse(raw);
-    var ts = data.ts || 0;
-    if (ts === lastSentTs) return;   // 同じデータは送らない
-    lastSentTs = ts;
-    localStorage.removeItem("yt_pending_save");
-    send(data);
-  } catch(e) {
-    localStorage.removeItem("yt_pending_save");
+  if (raw) {
+    try {
+      var data = JSON.parse(raw);
+      var ts = data.ts || 0;
+      if (ts !== lastSentTs) {
+        lastSentTs = ts;
+        localStorage.removeItem("yt_pending_save");
+        send({ type: "save", start: data.start, end: data.end, label: data.label || "", ts: ts });
+        return;
+      }
+    } catch(e) {
+      localStorage.removeItem("yt_pending_save");
+    }
+  }
+  // 現在のプレイヤー時間を定期送信（Python ボタン用）
+  var cur = localStorage.getItem("yt_current_times");
+  if (cur && cur !== lastCurrentStr) {
+    lastCurrentStr = cur;
+    try {
+      var d = JSON.parse(cur);
+      send({ type: "current", start: d.start, end: d.end, ts: Date.now() });
+    } catch(e) {}
   }
 }, 300);
 
-// Streamlit から render が来たら初回だけ null を送ってスピナーを解消する
 window.addEventListener("message", function(e) {
   if (!e.data || e.data.type !== "streamlit:render") return;
   if (!initialized) {

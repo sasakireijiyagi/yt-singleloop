@@ -755,6 +755,7 @@ def render_player(
       ensureValidRangeAfterStartChange();
       lastKnownTime = localStartSec;
       updateLabels();
+      storeCurrentTimes();
 
       setStatus(
         "Start set to " + formatTime(localStartSec) +
@@ -772,6 +773,7 @@ def render_player(
       ensureValidRangeAfterEndChange();
       lastKnownTime = requestedEndSec;
       updateLabels();
+      storeCurrentTimes();
 
       if (requestedEndSec <= localStartSec + 0.1) {{
         setStatus(
@@ -786,33 +788,46 @@ def render_player(
       }}
     }}
 
+    function storeCurrentTimes() {{
+      try {{
+        localStorage.setItem("yt_current_times", JSON.stringify({{
+          start: localStartSec,
+          end: localEndSec
+        }}));
+      }} catch(e) {{}}
+    }}
+
     function adjustStart(delta) {{
       localStartSec = Math.max(0, Number((localStartSec + delta).toFixed(1)));
       if (localStartSec >= localEndSec - 0.1) {{
         localStartSec = Math.max(0, localEndSec - 0.1);
       }}
       updateLabels();
+      storeCurrentTimes();
       setStatus("開始: " + formatTime(localStartSec) + " → 終了: " + formatTime(localEndSec));
     }}
 
     function adjustEnd(delta) {{
       localEndSec = Math.max(localStartSec + 0.1, Number((localEndSec + delta).toFixed(1)));
       updateLabels();
+      storeCurrentTimes();
       setStatus("開始: " + formatTime(localStartSec) + " → 終了: " + formatTime(localEndSec));
     }}
 
     function saveFromPlayer() {{
       var label = document.getElementById("pSaveLabel").value || "";
       var msg = document.getElementById("pSaveMsg");
-      var data = {{
+      localStorage.setItem("yt_pending_save", JSON.stringify({{
         start: localStartSec,
         end: localEndSec,
         label: label,
         ts: Date.now()
-      }};
-      localStorage.setItem("yt_pending_save", JSON.stringify(data));
+      }}));
       msg.textContent = "保存中... (数秒お待ちください)";
     }}
+
+    // 初期時間を localStorage に記録（Python ボタン押下時にも使える）
+    storeCurrentTimes();
 
     updateLabels();
   </script>
@@ -1220,15 +1235,23 @@ with col_player:
         key="save_loop_label",
     )
     if st.button("このループを保存", type="primary"):
-        _use_label = save_label if save_label else f"{format_loop_time(start_sec)} 〜 {format_loop_time(end_sec)}"
+        # リレー経由で受け取った最新プレイヤー時間があればそちらを優先
+        _pt = st.session_state.get("_player_current_times")
+        if _pt and _pt.get("video_id") == selected_video_id:
+            _use_start = float(_pt["start"])
+            _use_end   = float(_pt["end"])
+        else:
+            _use_start = start_sec
+            _use_end   = end_sec
+        _use_label = save_label if save_label else f"{format_loop_time(_use_start)} 〜 {format_loop_time(_use_end)}"
         _new_loop = {
             "title": active_video.get("title", "Untitled"),
             "channel": active_video.get("channel", ""),
             "video_id": selected_video_id,
             "url": selected_video_url,
-            "start_sec": start_sec,
-            "end_sec": end_sec,
-            "end_at_video_end": end_at_video_end,
+            "start_sec": _use_start,
+            "end_sec": _use_end,
+            "end_at_video_end": False,
             "label": _use_label,
         }
         _existing = st.session_state.get("saved_loops", [])
@@ -1245,22 +1268,34 @@ with col_player:
             st.toast("保存しました！", icon="✅")
             st.rerun()
 
-    # 保存リレーコンポーネント（プレイヤー内「この時間で保存」ボタン用）
+    # 保存リレーコンポーネント（localStorage ↔ Python 橋渡し）
     _relay_result = _save_relay(key="save_relay")
     if _relay_result and isinstance(_relay_result, dict):
-        _rts = int(_relay_result.get("ts", 0))
-        if _rts != st.session_state.get("_relay_processed_ts", -1):
+        _rtype = _relay_result.get("type")
+        _rts   = int(_relay_result.get("ts", 0))
+
+        if _rtype == "current":
+            # プレイヤーの現在時間を session_state に記録（Python ボタン用）
+            _new_pt = {"video_id": selected_video_id,
+                       "start": float(_relay_result.get("start", start_sec)),
+                       "end":   float(_relay_result.get("end",   end_sec))}
+            if _new_pt != st.session_state.get("_player_current_times"):
+                st.session_state["_player_current_times"] = _new_pt
+                # current の更新は rerun 不要（次の操作時に自動的に使われる）
+
+        elif _rtype == "save" and _rts != st.session_state.get("_relay_processed_ts", -1):
+            # プレイヤー内「この時間で保存」ボタンからの保存
             st.session_state["_relay_processed_ts"] = _rts
             _rs = float(_relay_result.get("start", start_sec))
-            _re = float(_relay_result.get("end", end_sec))
+            _re = float(_relay_result.get("end",   end_sec))
             _rl = str(_relay_result.get("label", ""))
             _new_loop = {
-                "title": active_video.get("title", "Untitled"),
+                "title":   active_video.get("title", "Untitled"),
                 "channel": active_video.get("channel", ""),
                 "video_id": selected_video_id,
-                "url": selected_video_url,
+                "url":     selected_video_url,
                 "start_sec": _rs,
-                "end_sec": _re,
+                "end_sec":   _re,
                 "end_at_video_end": False,
                 "label": _rl or f"{format_loop_time(_rs)} 〜 {format_loop_time(_re)}",
             }
@@ -1268,7 +1303,7 @@ with col_player:
             _is_dup = any(
                 l["video_id"] == _new_loop["video_id"]
                 and abs(l["start_sec"] - _new_loop["start_sec"]) < 0.05
-                and abs(l["end_sec"] - _new_loop["end_sec"]) < 0.05
+                and abs(l["end_sec"]   - _new_loop["end_sec"])   < 0.05
                 for l in _existing
             )
             if not _is_dup:

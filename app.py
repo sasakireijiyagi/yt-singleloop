@@ -1212,10 +1212,40 @@ with col_player:
 
     st.divider()
     st.subheader("ループを保存")
-    st.caption("プレイヤー内の「この時間で保存」ボタンを使うと、調整した時間がそのまま保存されます。")
+    st.caption("プレイヤー内の「この時間で保存」ボタンで、調整した時間をそのまま保存できます。")
 
-    # プレイヤーiframe → Python のデータ受け渡し用の隠しテキスト入力
-    # 保存リレーコンポーネント（localStorage経由でプレイヤーJSの値を受け取る）
+    save_label = st.text_input(
+        "メモ（省略可）",
+        placeholder="例：イントロ、サビ、むずかしいとこ",
+        key="save_loop_label",
+    )
+    if st.button("このループを保存", type="primary"):
+        _use_label = save_label if save_label else f"{format_loop_time(start_sec)} 〜 {format_loop_time(end_sec)}"
+        _new_loop = {
+            "title": active_video.get("title", "Untitled"),
+            "channel": active_video.get("channel", ""),
+            "video_id": selected_video_id,
+            "url": selected_video_url,
+            "start_sec": start_sec,
+            "end_sec": end_sec,
+            "end_at_video_end": end_at_video_end,
+            "label": _use_label,
+        }
+        _existing = st.session_state.get("saved_loops", [])
+        _is_dup = any(
+            l["video_id"] == _new_loop["video_id"]
+            and abs(l["start_sec"] - _new_loop["start_sec"]) < 0.05
+            and abs(l["end_sec"] - _new_loop["end_sec"]) < 0.05
+            for l in _existing
+        )
+        if _is_dup:
+            st.info("同じループはすでに保存されています。")
+        else:
+            st.session_state.setdefault("saved_loops", []).append(_new_loop)
+            st.toast("保存しました！", icon="✅")
+            st.rerun()
+
+    # 保存リレーコンポーネント（プレイヤー内「この時間で保存」ボタン用）
     _relay_result = _save_relay(key="save_relay")
     if _relay_result and isinstance(_relay_result, dict):
         _rts = int(_relay_result.get("ts", 0))

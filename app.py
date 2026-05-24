@@ -1247,7 +1247,7 @@ with col_player:
             st.rerun()
 
     if st.session_state.pop("_relay_save_msg", False):
-        st.success("保存しました！")
+        st.toast("保存しました！", icon="✅")
 
 with col_saved:
     st.subheader("保存済みループ")

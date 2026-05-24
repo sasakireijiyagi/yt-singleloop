@@ -1123,29 +1123,6 @@ with st.sidebar:
         step=40,
     )
 
-    st.divider()
-    st.header("保存済みループ")
-    _saved_loops = st.session_state.get("saved_loops", [])
-    if not _saved_loops:
-        st.caption("まだ保存されたループはありません。")
-    for _i, _lp in enumerate(_saved_loops):
-        st.caption(f"**{_lp.get('title', 'Untitled')}**  \n{_lp.get('label', '')}")
-        _lc, _ld_col = st.columns(2)
-        if _lc.button("読み込む", key=f"load_lp_{_i}", use_container_width=True):
-            _it = {
-                "video_id": _lp["video_id"],
-                "title": _lp.get("title", ""),
-                "channel": _lp.get("channel", ""),
-                "duration": None,
-                "duration_text": "",
-                "webpage_url": _lp.get("url", ""),
-                "thumbnail": youtube_thumbnail_url(_lp["video_id"]),
-            }
-            set_active_video(_it, _lp["start_sec"], _lp["end_sec"], False)
-            st.rerun()
-        if _ld_col.button("削除", key=f"del_lp_{_i}", use_container_width=True):
-            st.session_state["saved_loops"].pop(_i)
-            st.rerun()
 
 
 active_video = st.session_state.active_video
@@ -1168,77 +1145,106 @@ if not end_at_video_end and end_sec <= start_sec:
     st.error("終了時間は開始時間より後にしてください。")
     st.stop()
 
-st.subheader("練習プレイヤー")
-
 selected_video_title = active_video.get("title", "")
 selected_video_channel = active_video.get("channel", "")
 selected_video_duration = active_video.get("duration_text", "")
 selected_video_url = active_video.get("webpage_url", "")
 selected_thumbnail = active_video.get("thumbnail", "")
 
-if selected_video_title:
-    st.markdown(f"**{selected_video_title}**")
+# メインエリアを左（プレイヤー）・右（保存済みループ）に分割
+col_player, col_saved = st.columns([3, 1])
 
-meta_parts = []
-if selected_video_channel:
-    meta_parts.append(selected_video_channel)
-if selected_video_duration:
-    meta_parts.append(selected_video_duration)
-if meta_parts:
-    st.caption(" / ".join(meta_parts))
+with col_player:
+    st.subheader("練習プレイヤー")
 
-if selected_video_url:
-    st.markdown(f"[YouTubeで開く]({selected_video_url})")
+    if selected_video_title:
+        st.markdown(f"**{selected_video_title}**")
 
-if selected_thumbnail:
-    st.image(selected_thumbnail, width=320)
+    meta_parts = []
+    if selected_video_channel:
+        meta_parts.append(selected_video_channel)
+    if selected_video_duration:
+        meta_parts.append(selected_video_duration)
+    if meta_parts:
+        st.caption(" / ".join(meta_parts))
 
-if end_at_video_end:
-    st.write(f"初期再生区間: **{format_loop_time(start_sec)}** 〜 **動画末尾**")
-else:
-    st.write(f"初期再生区間: **{format_loop_time(start_sec)}** 〜 **{format_loop_time(end_sec)}**")
+    if selected_video_url:
+        st.markdown(f"[YouTubeで開く]({selected_video_url})")
 
-st.caption("プレイヤー内の「ここを開始にする」を押すと、終了位置は動画末尾へ自動で広がります。「ここを終了にする」では開始位置は動きません。")
+    if selected_thumbnail:
+        st.image(selected_thumbnail, width=320)
 
-render_player(
-    video_id=selected_video_id,
-    start_sec=start_sec,
-    end_sec=end_sec,
-    player_width=int(player_width),
-    end_at_video_end=end_at_video_end,
-)
-
-st.divider()
-st.subheader("ループを保存")
-save_label = st.text_input(
-    "メモ（省略可）",
-    placeholder="例：イントロ、サビ、むずかしいとこ",
-    key="save_loop_label",
-)
-if st.button("このループを保存", type="primary"):
-    _new_loop = {
-        "title": active_video.get("title", "Untitled"),
-        "channel": active_video.get("channel", ""),
-        "video_id": selected_video_id,
-        "url": selected_video_url,
-        "start_sec": start_sec,
-        "end_sec": end_sec,
-        "label": save_label if save_label else f"{format_loop_time(start_sec)} 〜 {format_loop_time(end_sec)}",
-    }
-    # 重複チェック（同じ動画・同じ区間）
-    _existing = st.session_state.get("saved_loops", [])
-    _is_dup = any(
-        l["video_id"] == _new_loop["video_id"]
-        and abs(l["start_sec"] - _new_loop["start_sec"]) < 0.05
-        and abs(l["end_sec"] - _new_loop["end_sec"]) < 0.05
-        for l in _existing
-    )
-    if _is_dup:
-        st.info("同じループはすでに保存されています。")
+    if end_at_video_end:
+        st.write(f"初期再生区間: **{format_loop_time(start_sec)}** 〜 **動画末尾**")
     else:
-        st.session_state.setdefault("saved_loops", []).append(_new_loop)
-        st.success("保存しました！サイドバーの「保存済みループ」から読み込めます。")
-        st.rerun()
+        st.write(f"初期再生区間: **{format_loop_time(start_sec)}** 〜 **{format_loop_time(end_sec)}**")
+
+    st.caption("プレイヤー内の「ここを開始にする」を押すと、終了位置は動画末尾へ自動で広がります。「ここを終了にする」では開始位置は動きません。")
+
+    render_player(
+        video_id=selected_video_id,
+        start_sec=start_sec,
+        end_sec=end_sec,
+        player_width=int(player_width),
+        end_at_video_end=end_at_video_end,
+    )
+
+    st.divider()
+    st.subheader("ループを保存")
+    save_label = st.text_input(
+        "メモ（省略可）",
+        placeholder="例：イントロ、サビ、むずかしいとこ",
+        key="save_loop_label",
+    )
+    if st.button("このループを保存", type="primary"):
+        _new_loop = {
+            "title": active_video.get("title", "Untitled"),
+            "channel": active_video.get("channel", ""),
+            "video_id": selected_video_id,
+            "url": selected_video_url,
+            "start_sec": start_sec,
+            "end_sec": end_sec,
+            "label": save_label if save_label else f"{format_loop_time(start_sec)} 〜 {format_loop_time(end_sec)}",
+        }
+        _existing = st.session_state.get("saved_loops", [])
+        _is_dup = any(
+            l["video_id"] == _new_loop["video_id"]
+            and abs(l["start_sec"] - _new_loop["start_sec"]) < 0.05
+            and abs(l["end_sec"] - _new_loop["end_sec"]) < 0.05
+            for l in _existing
+        )
+        if _is_dup:
+            st.info("同じループはすでに保存されています。")
+        else:
+            st.session_state.setdefault("saved_loops", []).append(_new_loop)
+            st.success("保存しました！")
+            st.rerun()
+
+with col_saved:
+    st.subheader("保存済みループ")
+    _saved_loops = st.session_state.get("saved_loops", [])
+    if not _saved_loops:
+        st.caption("まだ保存されたループはありません。")
+    for _i, _lp in enumerate(_saved_loops):
+        with st.container(border=True):
+            st.caption(f"**{_lp.get('title', 'Untitled')}**")
+            st.caption(_lp.get('label', ''))
+            _lc, _ld_col = st.columns(2)
+            if _lc.button("読み込む", key=f"load_lp_{_i}", use_container_width=True):
+                _it = {
+                    "video_id": _lp["video_id"],
+                    "title": _lp.get("title", ""),
+                    "channel": _lp.get("channel", ""),
+                    "duration": None,
+                    "duration_text": "",
+                    "webpage_url": _lp.get("url", ""),
+                    "thumbnail": youtube_thumbnail_url(_lp["video_id"]),
+                }
+                set_active_video(_it, _lp["start_sec"], _lp["end_sec"], False)
+                st.rerun()
+            if _ld_col.button("削除", key=f"del_lp_{_i}", use_container_width=True):
+                st.session_state["saved_loops"].pop(_i)
+                st.rerun()
 
 with st.expander("使い方"):
     st.markdown(
